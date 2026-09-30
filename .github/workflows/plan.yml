@@ -1,0 +1,27 @@
+name: Aktualizuj plan WAT
+
+on:
+  schedule:
+    - cron: "0 4 * * *"   # 04:00 UTC = 6:00 czasu polskiego latem (5:00 zimą)
+  workflow_dispatch:       # ręczne uruchomienie z zakładki Actions
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests beautifulsoup4
+      - run: python wat_plan.py WCY24KC2S1 plan.ics
+      - name: Zapisz zmiany
+        run: |
+          git config user.name "plan-bot"
+          git config user.email "plan-bot@users.noreply.github.com"
+          git add plan.ics
+          git commit -m "Aktualizacja planu $(date +%F)" || echo "Brak zmian"
+          git push
