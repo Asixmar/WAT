@@ -18,6 +18,15 @@ GROUP = sys.argv[1] if len(sys.argv) > 1 else "WCY24KC2S1"
 OUT = sys.argv[2] if len(sys.argv) > 2 else "plan.ics"
 URL = f"https://planzajec.wcy.wat.edu.pl/pl/rozklad?grupa_id={GROUP}"
 
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/129.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "pl-PL,pl;q=0.9,en;q=0.8",
+}
+
 # Godziny bloków (pon–pt oraz weekend – bloki 5–7 różnią się w weekend)
 WEEKDAY_BLOCKS = {
     1: ("08:00", "09:35"), 2: ("09:50", "11:25"), 3: ("11:40", "13:15"),
@@ -39,6 +48,12 @@ LESSON_RE = re.compile(
     r"(?P<name>.+?)\s+-\s+\((?P<type>[^)]+)\)\s+-\s*(?P<teacher>[^#]*?)\s*"
     r"#[0-9A-Fa-f]{6}",
     re.S,
+)
+
+# Słowa typowe dla stron z ochroną antybotową
+BOT_MARKERS = (
+    "captcha", "cloudflare", "cf-chl", "just a moment", "checking your browser",
+    "anubis", "access denied", "attention required", "ddos", "verify you are human",
 )
 
 
@@ -109,12 +124,50 @@ def build_ics(lessons) -> str:
     return "\r\n".join(lines) + "\r\n"
 
 
+def fetch() -> str:
+    try:
+        r = requests.get(URL, timeout=60, headers=HEADERS)
+    except requests.RequestException as e:
+        sys.exit(f"BŁĄD POŁĄCZENIA z {URL}: {type(e).__name__}: {e}")
+
+    print(f"URL:          {r.url}")
+    print(f"Status HTTP:  {r.status_code}")
+    print(f"Content-Type: {r.headers.get('Content-Type')}")
+    print(f"Server:       {r.headers.get('Server')}")
+    print(f"Rozmiar:      {len(r.text)} znaków")
+
+    if r.status_code != 200:
+        print("----- początek odpowiedzi -----")
+        print(r.text[:1500])
+        print("----- koniec podglądu -----")
+        sys.exit(f"Serwer zwrócił status {r.status_code}. Plik NIE został nadpisany.")
+    return r.text
+
+
 def main():
-    html = requests.get(URL, timeout=60, headers={"User-Agent": "Mozilla/5.0"}).text
+    html = fetch()
     text = BeautifulSoup(html, "html.parser").get_text(" ")
     lessons = parse(text)
+
     if not lessons:
-        sys.exit("Nie znaleziono żadnych zajęć – zmienił się układ strony? Plik NIE został nadpisany.")
+        low = html.lower()
+        found = [m for m in BOT_MARKERS if m in low]
+        print("----- tekst strony (pierwsze 1500 znaków) -----")
+        print(" ".join(text.split())[:1500])
+        print("----- koniec podglądu -----")
+        if found:
+            sys.exit(
+                f"Strona wygląda na blokadę antybotową (znaleziono: {', '.join(found)}). "
+                "Plik NIE został nadpisany."
+            )
+        if "block" not in text and not re.search(r"\d{4}_\d{2}_\d{2}", text):
+            sys.exit(
+                "Strona nie zawiera żadnych zajęć – pusty plan dla tej grupy "
+                "(nowy semestr / zmieniona nazwa grupy?). Plik NIE został nadpisany."
+            )
+        sys.exit("Zajęcia są na stronie, ale regex ich nie rozpoznał – zmienił się format. "
+                 "Plik NIE został nadpisany.")
+
     with open(OUT, "w", encoding="utf-8", newline="") as f:
         f.write(build_ics(lessons))
     print(f"Zapisano {len(lessons)} zajęć do {OUT}")
