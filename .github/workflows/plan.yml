@@ -1,9 +1,12 @@
 name: Aktualizuj plan WAT
 
 on:
-  schedule:
-    - cron: "0 4 * * *"   # 04:00 UTC = 6:00 czasu polskiego latem (5:00 zimą)
-  workflow_dispatch:       # ręczne uruchomienie z zakładki Actions
+  # Odpala się, gdy iPhone wyśle nowy plan.html
+  push:
+    paths:
+      - plan.html
+  # Ręczne uruchomienie z zakładki Actions
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -13,15 +16,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
       - run: pip install requests beautifulsoup4
-      - run: python wat_plan.py WCY24KC2S1 plan.ics
+
+      - run: python wat_plan.py WCY24KC2S1 plan.ics plan.html
+
       - name: Zapisz zmiany
         run: |
-          git config user.name "plan-bot"
-          git config user.email "plan-bot@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add plan.ics
-          git commit -m "Aktualizacja planu $(date +%F)" || echo "Brak zmian"
-          git push
+          if git diff --cached --quiet; then
+            echo "Plan bez zmian."
+          else
+            git commit -m "Aktualizacja plan.ics"
+            git push
+          fi
