@@ -3,8 +3,10 @@
 Pobiera plan zajęć grupy z planzajec.wcy.wat.edu.pl i zapisuje go jako plik
 kalendarza plan.ics (do subskrypcji na iPhonie).
 
-Użycie:  python wat_plan.py [GRUPA] [PLIK_WYJSCIOWY]
+Użycie:  python wat_plan.py [GRUPA] [PLIK_WYJSCIOWY] [PLIK_HTML]
 Domyślnie: WCY24KC2S1 -> plan.ics
+Jeśli podasz PLIK_HTML (np. plan.html wysłany z iPhone'a), skrypt czyta plan
+z tego pliku zamiast łączyć się ze stroną WAT.
 """
 import re
 import sys
@@ -16,6 +18,7 @@ from bs4 import BeautifulSoup
 
 GROUP = sys.argv[1] if len(sys.argv) > 1 else "WCY24KC2S1"
 OUT = sys.argv[2] if len(sys.argv) > 2 else "plan.ics"
+HTML_FILE = sys.argv[3] if len(sys.argv) > 3 else None
 URL = f"https://planzajec.wcy.wat.edu.pl/pl/rozklad?grupa_id={GROUP}"
 
 HEADERS = {
@@ -145,7 +148,14 @@ def fetch() -> str:
 
 
 def main():
-    html = fetch()
+    if HTML_FILE:
+        with open(HTML_FILE, encoding="utf-8", errors="replace") as f:
+            html = f.read()
+        print(f"Czytam plan z pliku {HTML_FILE} ({len(html)} znaków)")
+        if "incapsula" in html.lower() and "block" not in html:
+            sys.exit("Plik HTML to strona blokady Incapsula, a nie plan. Plik NIE został nadpisany.")
+    else:
+        html = fetch()
     text = BeautifulSoup(html, "html.parser").get_text(" ")
     lessons = parse(text)
 
